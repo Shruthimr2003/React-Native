@@ -7,7 +7,7 @@ On the other hand, SecureStore uses the device’s built-in secure systems — K
 
 Because of this, sensitive data like authentication tokens should never be stored in AsyncStorage. If stored there, they can be exposed or extracted. SecureStore is the safer option because it is specifically designed to handle confidential information.
 
-1. **What to persist vs. not:** Name three types of state that should NOT be persisted and explain why.
+2. **What to persist vs. not:** Name three types of state that should NOT be persisted and explain why.
 
 Three types of state that should not be persisted are sensitive data, derived state, and temporary UI state. Sensitive data like tokens should not be stored in normal storage due to security risks. Derived state (e.g., filtered lists) can always be recalculated, and temporary UI state (like loading flags or modals) is session-specific and should reset when the app restarts.
 
@@ -17,10 +17,10 @@ Three types of state that should not be persisted are sensitive data, derived st
 partialize is used to control which parts of the Zustand store are saved to persistent storage. Fields like status and error are excluded because they represent temporary runtime states of API requests. If they were persisted, the app might restart showing stale errors or remain stuck in a loading state even though no request is running.Instead, only stable data like fetched results should be persisted, while transient states like loading and errors should reset when the app starts.   
 
 
-1. **Derived state vs. stored state:** Why is the sorted/filtered user list computed at read time instead of stored in the Zustand store?
+4. **Derived state vs. stored state:** Why is the sorted/filtered user list computed at read time instead of stored in the Zustand store?
    
 A sorted or filtered user list is derived from the original users array, so it can be computed whenever the data is read. Storing it in the Zustand store would duplicate state and create multiple sources of truth, which can lead to inconsistencies when the base data changes. Computing it at read time keeps the store minimal and ensures the derived data is always up to date.
 
-1. **API calls in stores vs. components:** What problems did you have in Part 1 with fetch logic inside components? How does moving it to services + store actions help?
+.5 **API calls in stores vs. components:** What problems did you have in Part 1 with fetch logic inside components? How does moving it to services + store actions help?
 
 When API calls are written directly inside components, the components become large, harder to maintain, and the fetch logic may get duplicated across multiple screens. Moving API logic to services and store actions separates concerns—services handle network requests, stores manage state, and components focus only on rendering UI. This improves code reuse, testability, and overall application structure.
