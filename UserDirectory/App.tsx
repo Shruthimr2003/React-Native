@@ -1,279 +1,143 @@
-import axios from "axios";
-import { StatusBar } from "expo-status-bar";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useMemo, useCallback } from "react";
 import {
-  ActivityIndicator,
-  Button,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions
+  FlatList,
+  StyleSheet
 } from "react-native";
 
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView } from "react-native-safe-area-context";
 
-type User = {
-  id: number;
-  name: string;
-  email: string;
-  company: { name: string };
-};
+import Header from "./src/components/Header";
+import SearchBar from "./src/components/SearchBar";
+import UserCard from "./src/components/UserCard";
 
-type Post = {
-  id: number;
-  title: string;
-  userId: number;
-};
+import { useUserStore } from "./src/stores/useUserStore";
+import { useUIStore } from "./src/stores/useUIStore";
+import { useAuthStore } from "./src/stores/useAuthStore";
 
-const api = axios.create({
-  baseURL: "https://jsonplaceholder.typicode.com"
-});
+import { getSecure } from "./src/services/secureStorage";
+import { useTheme } from "./src/themes/useTheme";
+import { usePostStore } from "./src/stores/usePostStore";
+import Footer from "./src/components/Footer";
+
+
 
 export default function App() {
 
-  const { width, height } = useWindowDimensions();
-  const avatarSize = width * 0.12;
+  /* ---------- stores ---------- */
+  const colors = useTheme()
+  const users = useUserStore(s => s.users);
+  const favorites = useUserStore(s => s.favorites);
+  const pinnedUserId = useUserStore(s => s.pinnedUserId);
 
-  const [users, setUsers] = useState<User[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
-  const [postsByUser, setPostsByUser] = useState<Record<number, Post[]>>({});
-  const [loadingPosts, setLoadingPosts] = useState<Record<number, boolean>>({});
+  const fetchUsers = useUserStore(s => s.fetchUsers);
+  const setPinnedUser = useUserStore(s => s.setPinnedUser);
 
-  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const searchQuery = useUIStore(s => s.searchQuery);
 
-  const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState("");
+  const initializeAuth = useAuthStore(s => s.initialize);
 
+  const clearUsers = useUserStore(s => s.clearUsers)
+  const clearCache = usePostStore(s => s.clearCache)
 
-
-  const fetchUsers = async () => {
-    try {
-      setError(null);
-      setLoadingUsers(true);
-
-      const response = await api.get<User[]>("/users");
-
-      setUsers(response.data);
-      setFilteredUsers(response.data);
-
-    } catch {
-      setError("Failed to load users.");
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
-
-  const fetchPosts = async (userId: number) => {
-
-    try {
-      setLoadingPosts(prev => ({ ...prev, [userId]: true }));
-
-      const res = await api.get<Post[]>(`/posts?userId=${userId}`);
-
-      setPostsByUser(prev => ({
-        ...prev,
-        [userId]: res.data
-      }));
-
-    } finally {
-      setLoadingPosts(prev => ({ ...prev, [userId]: false }));
-    }
-  };
-
-  const toggleUser = (userId: number) => {
-
-    if (expandedUserId === userId) {
-      setExpandedUserId(null);
-      return;
-    }
-
-    setExpandedUserId(userId);
-
-    if (!postsByUser[userId]) {
-      fetchPosts(userId);
-    }
-  };
-
-  const handleSearch = (text: string) => {
-
-    setSearch(text);
-
-    const filtered = users.filter(user =>
-      user.name.toLowerCase().includes(text.toLowerCase())
-    );
-
-    setFilteredUsers(filtered);
-  };
-
-  const onRefresh = async () => {
-
-    setRefreshing(true);
-
-    setPostsByUser({});
-    setExpandedUserId(null);
-
-    await fetchUsers();
-
-    setRefreshing(false);
-  };
-
+ 
 
   useEffect(() => {
-    fetchUsers();
+    const init = async () => {
+
+      await initializeAuth();
+  
+      const lastFetched = useUserStore.getState().lastFetched
+
+      const FIVE_MINUTES = 5 * 60 * 1000
+
+      if(!lastFetched || Date.now() -lastFetched > FIVE_MINUTES ){
+        await fetchUsers()
+      }
+
+      const pinned = await getSecure("pinned_user_id");
+
+      if (pinned) {
+        setPinnedUser(Number(pinned));
+      }
+    };
+
+    init();
+
   }, []);
 
-
-  const renderItem = useCallback(({ item }: { item: User }) => {
-
-    const expanded = expandedUserId === item.id;
-    const posts = postsByUser[item.id];
-    const loading = loadingPosts[item.id];
-
-    return (
-
-      <Pressable
-        onPress={() => toggleUser(item.id)}
-        style={({ pressed }) => [
-          styles.card,
-          pressed && styles.cardPressed
-        ]}
-      >
-
-        <View style={styles.row}>
-
-          <View
-            style={[
-              styles.avatar,
-              { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }
-            ]}
-          >
-            <Text style={styles.avatarText}>
-              {item.name.charAt(0)}
-            </Text>
-          </View>
-
-          <View style={styles.userInfo}>
-            <Text style={styles.name}>{item.name}</Text>
-            <Text style={styles.company}>{item.company.name}</Text>
-          </View>
-
-          <View style={styles.badge}>
-            <Text>{Platform.OS === "ios" ? "iOS" : "Android"}</Text>
-          </View>
-
-          <Text style={styles.arrow}>
-            {expanded ? "▾" : "▸"}
-          </Text>
-
-        </View>
-
-        {expanded && (
-
-          <View style={styles.postsContainer}>
-
-            {loading && <ActivityIndicator size="small" />}
-
-            {posts?.slice(0, 3).map(post => (
-              <Text key={post.id} style={styles.postTitle}>
-                * {post.title}
-              </Text>
-            ))}
-
-          </View>
-
-        )}
-
-      </Pressable>
-
-    );
-
-  }, [expandedUserId, postsByUser, loadingPosts, avatarSize]);
-
-
-
-  if (loadingUsers) {
-
-    return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" />
-      </SafeAreaView>
-    );
+  const handleRefresh = async () => {
+    clearUsers()
+    clearCache()
+    await fetchUsers()
   }
 
+  const sortedUsers = useMemo(() => {
 
-  if (error) {
+    return [...users].sort((a, b) => {
 
-    return (
-      <SafeAreaView style={styles.center}>
-        <Text>{error}</Text>
-        <Button title="Retry" onPress={fetchUsers} />
-      </SafeAreaView>
+      if (a.id === pinnedUserId) return -1;
+      if (b.id === pinnedUserId) return 1;
+
+      const aIsFav = favorites.includes(a.id);
+      const bIsFav = favorites.includes(b.id);
+
+      if (aIsFav && !bIsFav) return -1;
+      if (!aIsFav && bIsFav) return 1;
+
+      return 0;
+    });
+
+  }, [users, favorites, pinnedUserId]);
+
+
+  const filteredUsers = useMemo(() => {
+
+    if (!searchQuery) return sortedUsers;
+
+    return sortedUsers.filter(user =>
+      user.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }
+
+  }, [sortedUsers, searchQuery]);
+
+
+  const renderItem = useCallback(
+    ({ item }: any) => <UserCard userId={item.id} />,
+    []
+  );
 
   return (
 
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
 
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
 
+        <Header />
+
+        <SearchBar />
+
         <FlatList
           data={filteredUsers}
-          renderItem={renderItem}
           keyExtractor={(item) => item.id.toString()}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
+          renderItem={renderItem}
+          onRefresh={handleRefresh}
+          refreshing={false}
           keyboardDismissMode="on-drag"
-
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-
-          ListHeaderComponent={() => (
-
-            <View>
-              <Text style={styles.title}>👥User Directory</Text>
-              <Text style={styles.subtitle}>{filteredUsers.length} users loaded</Text>
-              <TextInput
-                placeholder="Search users..."
-                value={search}
-                onChangeText={handleSearch}
-                style={styles.search}
-              />
-            </View>
-
-          )}
-
-          ListEmptyComponent={() => (
-            <Text style={styles.empty}>No users found</Text>
-          )}
-
-          ListFooterComponent={() => (
-            <Text style={styles.footer}>
-              Platform: {Platform.OS} | {Math.round(width)}x{Math.round(height)}
-            </Text>
-          )}
-
+          contentContainerStyle={{ flexGrow: 1 }}
+          ListFooterComponent={Footer}
         />
 
       </KeyboardAvoidingView>
-
-      <StatusBar style="dark" />
 
     </SafeAreaView>
 
   );
 }
-
 
 const styles = StyleSheet.create({
 
@@ -285,156 +149,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16
-  },
-
-  /* ---------- header ---------- */
-
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 4
-  },
-
-  subtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 16
-  },
-
-  /* ---------- search ---------- */
-
-  search: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    fontSize: 15,
-    marginBottom: 18
-  },
-
-  /* ---------- card ---------- */
-
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 16,
-
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 3 }
-      },
-      android: {
-        elevation: 3
-      }
-    })
-  },
-
-  cardPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.98 }]
-  },
-
-  row: {
-    flexDirection: "row",
-    alignItems: "center"
-  },
-
-
-  avatar: {
-    backgroundColor: "#6366F1",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 14
-  },
-
-  avatarText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700"
-  },
-
-  /* ---------- user info ---------- */
-
-  userInfo: {
-    flex: 1
-  },
-
-  name: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827"
-  },
-
-  company: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 2
-  },
-
-  /* ---------- badge ---------- */
-
-  badge: {
-    backgroundColor: "#EEF2FF",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 10
-  },
-
-  /* ---------- arrow ---------- */
-
-  arrow: {
-    fontSize: 18,
-    color: "#6B7280"
-  },
-
-  /* ---------- posts ---------- */
-
-  postsContainer: {
-    marginTop: 12,
-    paddingLeft: 48,
-    borderTopWidth: 1,
-    borderColor: "#F1F5F9",
-    paddingTop: 10
-  },
-
-  postTitle: {
-    fontSize: 13,
-    color: "#374151",
-    marginBottom: 6,
-    lineHeight: 18
-  },
-
-  /* ---------- list ---------- */
-
-  separator: {
-    height: 12
-  },
-
-  empty: {
-    textAlign: "center",
-    fontSize: 15,
-    color: "#6B7280",
-    marginTop: 40
-  },
-
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center"
-  },
-
-  footer: {
-    textAlign: "center",
-    marginVertical: 24,
-    fontSize: 12,
-    color: "#9CA3AF"
   }
 
 });
